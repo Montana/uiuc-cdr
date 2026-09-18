@@ -49,8 +49,17 @@ class Worker(threading.Thread):
                 response = requests.post(f'{cdr_url}/v1/maps/publish/features', data=f, headers=headers)
             response.raise_for_status()
         except RequestException as e:
-            logging.exception(f"Request Error {response.text}.")
+            # Record the failure before anything else so it can never be lost,
+            # e.g. if logging fails. Transport errors (connection refused,
+            # timeout, DNS) are raised by requests.post() before a response
+            # exists, so only HTTP errors carry one. Compare against None:
+            # a Response is falsy for 4xx/5xx status codes.
             self.exception = e
+            response = getattr(e, "response", None)
+            if response is not None:
+                logging.exception(f"Request Error {response.status_code}: {response.text}")
+            else:
+                logging.exception("Request Error: no response received from CDR.")
         except Exception as e:
             logging.exception("Error processing pipeline request.")
             self.exception = e
